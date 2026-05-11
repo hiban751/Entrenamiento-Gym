@@ -3,6 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="icon" href="https://fav.farm/🏋️">
+<link rel="apple-touch-icon" href="https://fav.farm/🏋️">
 <title>IRON TRACKER</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
@@ -265,7 +269,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);-webk
     <button class="b b-danger b-fl" id="resetBtn">Reiniciar Día</button>
     <button class="b b-cyan b-fl" id="newBtn">Nuevo Entreno</button>
   </div>
-  <div style="text-align:center;margin-top:8px;font-size:10px;color:var(--dim);opacity:.5;letter-spacing:.5px">Creado por IvanL</div>
+  <p style="text-align:center;margin-top:8px;font-size:10px;color:var(--dim);opacity:.5;letter-spacing:.5px">HiVan Performance Systems • v3.0</p>
 </div>
 
 <script>
@@ -284,10 +288,8 @@ function clock() {
   const d = DAYS[n.getDay()].toUpperCase();
   const m = MOS[n.getMonth()].toUpperCase();
   document.getElementById('hdrDate').textContent = `${d}, ${n.getDate()} ${m} ${n.getFullYear()}`;
-  let h = n.getHours(), mi = n.getMinutes();
-  const am = h >= 12 ? 'pm' : 'am';
-  if (h > 12) h -= 12; if (h === 0) h = 12;
-  document.getElementById('hdrTime').innerHTML = `${String(h).padStart(2,'0')}:${String(mi).padStart(2,'0')}<span>${am}</span>`;
+  const h = n.getHours(), mi = n.getMinutes();
+  document.getElementById('hdrTime').textContent = `${String(h).padStart(2,'0')}:${String(mi).padStart(2,'0')}`;
 }
 
 // ====== Audio ======
