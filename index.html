@@ -2,11 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="icon" href="https://fav.farm/🏋️">
-<link rel="apple-touch-icon" href="https://fav.farm/🏋️">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>IRON TRACKER</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
@@ -141,8 +137,18 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);-webk
 .rt-flash{animation:rtf .4s ease 4}
 @keyframes rtf{0%,100%{border-color:var(--border)}50%{border-color:var(--cyan);box-shadow:0 0 24px rgba(0,229,255,.2)}}
 
+/* ====== FLOATING REST TIMER ====== */
+.rt-floating{position:fixed;top:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;z-index:1000;margin:0;border-radius:0 0 var(--radius) var(--radius);border-color:var(--cyan);border-width:1.5px;box-shadow:0 0 30px rgba(0,229,255,.25),0 4px 24px rgba(0,0,0,.5);padding:calc(max(env(safe-area-inset-top,0px),12px)) 16px 14px;animation:rtSlideIn .35s cubic-bezier(.4,0,.2,1)}
+.rt-floating .rt-ring{width:72px;height:72px}
+.rt-floating .rt-ring svg{width:72px;height:72px}
+.rt-floating .rt-display{font-size:26px}
+.rt-floating .rt-label{font-size:9px}
+.rt-floating .rt-btns{margin-top:8px}
+.rt-floating .rt-btns button{min-width:56px;padding:7px 12px;font-size:12px}
+@keyframes rtSlideIn{from{opacity:0;top:-60px}to{opacity:1;top:0}}
+
 /* bottom bar */
-.bot{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--border);padding:8px 14px 14px;z-index:100}
+.bot{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--border);padding:8px 14px calc(14px + env(safe-area-inset-bottom, 0px));z-index:100}
 .bot::before{content:'';position:absolute;bottom:100%;left:0;right:0;height:24px;background:linear-gradient(transparent,var(--surface));pointer-events:none}
 .bot-m{display:flex;justify-content:space-around;margin-bottom:8px}
 .bot-m div{text-align:center}
@@ -221,24 +227,6 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);-webk
 
   <div id="exContainer"></div>
 
-  <div class="rt-panel" id="rtPanel">
-    <div class="rt-ring">
-      <svg viewBox="0 0 130 130">
-        <circle class="rt-bg" cx="65" cy="65" r="60"/>
-        <circle class="rt-fill" id="rtFill" cx="65" cy="65" r="60"/>
-      </svg>
-      <div class="rt-ctr">
-        <div class="rt-display" id="rtDisplay">1:00</div>
-        <div class="rt-label">Descanso</div>
-      </div>
-    </div>
-    <div class="rt-btns">
-      <button class="b-timer" id="rtAdd10">+10s</button>
-      <button class="b-timer" id="rtSub10">-10s</button>
-      <button class="b-skip" id="rtSkip">Saltar</button>
-    </div>
-  </div>
-
   <!-- Calendar -->
   <div class="cal-wrap" id="calWrap">
     <div class="cal-hdr">
@@ -259,6 +247,24 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);-webk
   </div>
 </div>
 
+<div class="rt-panel" id="rtPanel">
+  <div class="rt-ring">
+    <svg viewBox="0 0 130 130">
+      <circle class="rt-bg" cx="65" cy="65" r="60"/>
+      <circle class="rt-fill" id="rtFill" cx="65" cy="65" r="60"/>
+    </svg>
+    <div class="rt-ctr">
+      <div class="rt-display" id="rtDisplay">1:00</div>
+      <div class="rt-label">Descanso</div>
+    </div>
+  </div>
+  <div class="rt-btns">
+    <button class="b-timer" id="rtAdd10">+10s</button>
+    <button class="b-timer" id="rtSub10">-10s</button>
+    <button class="b-skip" id="rtSkip">Saltar</button>
+  </div>
+</div>
+
 <div class="bot">
   <div class="bot-m">
     <div><div class="bot-m-n" id="bReps">0</div><div class="bot-m-l">Reps Totales</div></div>
@@ -269,7 +275,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);-webk
     <button class="b b-danger b-fl" id="resetBtn">Reiniciar Día</button>
     <button class="b b-cyan b-fl" id="newBtn">Nuevo Entreno</button>
   </div>
-  <p style="text-align:center;margin-top:8px;font-size:10px;color:var(--dim);opacity:.5;letter-spacing:.5px">HiVan Performance Systems • v1.4.1</p>
+  <div style="text-align:center;margin-top:8px;font-size:10px;color:var(--dim);opacity:.5;letter-spacing:.5px">HiVan Performance Systems • v1.4.1</div>
 </div>
 
 <script>
@@ -288,8 +294,10 @@ function clock() {
   const d = DAYS[n.getDay()].toUpperCase();
   const m = MOS[n.getMonth()].toUpperCase();
   document.getElementById('hdrDate').textContent = `${d}, ${n.getDate()} ${m} ${n.getFullYear()}`;
-  const h = n.getHours(), mi = n.getMinutes();
-  document.getElementById('hdrTime').textContent = `${String(h).padStart(2,'0')}:${String(mi).padStart(2,'0')}`;
+  let h = n.getHours(), mi = n.getMinutes();
+  const am = h >= 12 ? 'pm' : 'am';
+  if (h > 12) h -= 12; if (h === 0) h = 12;
+  document.getElementById('hdrTime').innerHTML = `${String(h).padStart(2,'0')}:${String(mi).padStart(2,'0')}<span>${am}</span>`;
 }
 
 // ====== Audio ======
@@ -362,17 +370,19 @@ function rtRender() {
   document.getElementById('rtDisplay').textContent = `${Math.floor(rtRem / 60)}:${String(rtRem % 60).padStart(2,'0')}`;
   document.getElementById('rtFill').style.strokeDashoffset = RT_C - (rtTot > 0 ? rtRem / rtTot : 0) * RT_C;
 }
-function rtStop() { if (rtInt) { clearInterval(rtInt); rtInt = null; } rtRun = false; document.getElementById('rtPanel').classList.remove('show'); }
+function rtStop() { if (rtInt) { clearInterval(rtInt); rtInt = null; } rtRun = false; const p = document.getElementById('rtPanel'); p.classList.remove('show'); p.classList.remove('rt-floating'); }
 function rtStart(sec) {
   rtStop(); rtTot = sec; rtRem = sec; rtRun = true; rtRender();
-  document.getElementById('rtPanel').classList.add('show');
+  const p = document.getElementById('rtPanel');
+  p.classList.add('show');
+  p.classList.add('rt-floating');
   rtInt = setInterval(() => {
     rtRem--; rtRender();
     if (rtRem <= 0) {
       if (rtInt) { clearInterval(rtInt); rtInt = null; }
       rtRun = false; beep3();
-      document.getElementById('rtPanel').classList.add('rt-flash');
-      setTimeout(() => { document.getElementById('rtPanel').classList.remove('rt-flash'); document.getElementById('rtPanel').classList.remove('show'); }, 1800);
+      p.classList.add('rt-flash');
+      setTimeout(() => { p.classList.remove('rt-flash'); p.classList.remove('show'); p.classList.remove('rt-floating'); }, 1800);
     }
   }, 1000);
 }
