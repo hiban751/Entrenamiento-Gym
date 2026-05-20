@@ -280,7 +280,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);-webk
     <button class="b b-danger b-fl" id="resetBtn">Reiniciar Día</button>
     <button class="b b-cyan b-fl" id="newBtn">Nuevo Entreno</button>
   </div>
-  <div style="text-align:center;margin-top:8px;font-size:10px;color:var(--dim);opacity:.5;letter-spacing:.5px">HiVan Performance Systems • v1.4.1</div>
+  <div style="text-align:center;margin-top:8px;font-size:10px;color:var(--dim);opacity:.5;letter-spacing:.5px">HiVan Performance Systems • v1.5</div>
 </div>
 
 <script>
@@ -299,10 +299,9 @@ function clock() {
   const d = DAYS[n.getDay()].toUpperCase();
   const m = MOS[n.getMonth()].toUpperCase();
   document.getElementById('hdrDate').textContent = `${d}, ${n.getDate()} ${m} ${n.getFullYear()}`;
-  let h = n.getHours(), mi = n.getMinutes();
-  const am = h >= 12 ? 'pm' : 'am';
-  if (h > 12) h -= 12; if (h === 0) h = 12;
-  document.getElementById('hdrTime').innerHTML = `${String(h).padStart(2,'0')}:${String(mi).padStart(2,'0')}<span>${am}</span>`;
+  const h = String(n.getHours()).padStart(2,'0');
+  const mi = String(n.getMinutes()).padStart(2,'0');
+  document.getElementById('hdrTime').innerHTML = `${h}:${mi}`;
 }
 
 // ====== Audio ======
@@ -328,10 +327,18 @@ function updProgress() {
   for (const ex of S.exercises) {
     if (ex.type === 'strength') {
       for (const s of ex.sets) { total++; if (s.checked) done++; }
-    } else {
+    } else if (ex.type === 'cardio') {
       total += ex.duration;
       if (ex.completed) done += ex.duration;
       else { const e = ex.duration - (ex.remaining / 60); done += Math.max(0, e); }
+    } else if (ex.type === 'isometric') {
+      total++; if (ex.completed) done++;
+    } else if (ex.type === 'manual') {
+      total += ex.targetMin;
+      done += ex.completed ? ex.targetMin : Math.min(ex.trackedMin, ex.targetMin);
+    } else if (ex.type === 'interval') {
+      total += ex.totalSets;
+      done += ex.completed ? ex.totalSets : ex.setsDone;
     }
   }
   const pct = total === 0 ? 0 : Math.min(100, Math.round((done / total) * 100));
@@ -401,7 +408,25 @@ function parseWorkout(text) {
   const exs = [];
   for (const line of lines) {
     const cm = line.match(/^(.+?)\s+(\d+)\s*min(?:utos?)?\s*$/i);
-    if (cm) { const n = cm[1].trim(), m = parseInt(cm[2]); if (n && m > 0) { exs.push({ name: n.toUpperCase(), type: 'cardio', duration: m, remaining: m * 60, running: false, completed: false }); continue; } }
+    if (cm) { const n = cm[1].trim(), m = parseInt(cm[2]); if (n && m > 0) {
+      const nl = n.toUpperCase();
+      if (nl.includes('BICI') || nl.includes('BICICLETA')) {
+        exs.push({ name: nl, type: 'manual', trackedMin: 0, targetMin: m, completed: false });
+      } else {
+        exs.push({ name: nl, type: 'cardio', duration: m, remaining: m * 60, running: false, completed: false });
+      }
+      continue;
+    } }
+    const pm = line.match(/^(plancha(?:\s+isom[eé]trica)?)\s*$/i);
+    if (pm) { exs.push({ name: pm[1].toUpperCase(), type: 'isometric', elapsed: 0, running: false, completed: false }); continue; }
+    const im = line.match(/^(plancha(?:\s+series?)?)\s*(\d+)\s*(?:x\s*(\d+)(?::(\d+))?)?\s*$/i);
+    if (im) {
+      const sets = parseInt(im[2]);
+      const workMin = im[3] ? parseInt(im[3]) : 1;
+      const workSec = im[4] ? parseInt(im[4]) : 0;
+      const workTime = workMin * 60 + workSec;
+      exs.push({ name: `PLANCHA ${sets} SERIES`, type: 'interval', totalSets: sets, currentSet: 1, workTime: workTime > 0 ? workTime : 60, restTime: 60, remaining: workTime > 0 ? workTime : 60, isRest: false, running: false, completed: false, setsDone: 0 }); continue;
+    }
     const sm = line.match(/^(.+?)\s*(\d+)\s*[xX]\s*(\d+)\s*$/);
     if (sm) { const n = sm[1].trim(), se = parseInt(sm[2]), r = parseInt(sm[3]); if (n && se > 0) { const sl = []; for (let i = 0; i < se; i++) sl.push({ kg: '', reps: String(r), checked: false }); exs.push({ name: n.toUpperCase(), type: 'strength', sets: sl }); continue; } }
     const n = line.trim();
@@ -437,6 +462,76 @@ function startCardioTimer(ei) {
   }, 1000);
 }
 
+function startIsometricTimer(ei) {
+  if (cardioInts[ei]) clearInterval(cardioInts[ei]);
+  const ex = S.exercises[ei];
+  if (!ex || ex.type !== 'isometric') return;
+  ex.running = true; save();
+  cardioInts[ei] = setInterval(() => {
+    const e = S.exercises[ei];
+    if (!e || e.type !== 'isometric' || !e.running) { clearInterval(cardioInts[ei]); delete cardioInts[ei]; return; }
+    e.elapsed++;
+    const d = document.getElementById('cd-' + ei); if (d) d.textContent = fmtTime(e.elapsed);
+    save();
+  }, 1000);
+}
+
+function startIntervalTimer(ei) {
+  if (cardioInts[ei]) clearInterval(cardioInts[ei]);
+  const ex = S.exercises[ei];
+  if (!ex || ex.type !== 'interval') return;
+  ex.running = true; save();
+  cardioInts[ei] = setInterval(() => {
+    const e = S.exercises[ei];
+    if (!e || e.type !== 'interval' || !e.running) { clearInterval(cardioInts[ei]); delete cardioInts[ei]; return; }
+    e.remaining--;
+    const d = document.getElementById('cd-' + ei); if (d) d.textContent = fmtTime(e.remaining);
+    const sub = document.getElementById('sub-' + ei);
+    if (sub) {
+      if (e.isRest) {
+        sub.textContent = `Descanso • Serie ${e.currentSet}/${e.totalSets}`;
+        sub.style.color = 'var(--red)';
+      } else {
+        sub.textContent = `Serie ${e.currentSet} de ${e.totalSets} • Objetivo: ${fmtTime(e.workTime)}`;
+        sub.style.color = 'var(--cyan)';
+      }
+    }
+    if (e.remaining <= 0) {
+      clearInterval(cardioInts[ei]); delete cardioInts[ei];
+      e.running = false;
+      beep3(); save();
+      const pb = document.getElementById('cp-' + ei);
+      if (!e.isRest) {
+        e.setsDone = e.currentSet;
+        if (e.currentSet < e.totalSets) {
+          e.isRest = true;
+          e.remaining = e.restTime;
+          if (d) d.textContent = fmtTime(e.restTime);
+          if (sub) { sub.textContent = `Descanso • Quedan ${e.restTime}s (Serie ${e.currentSet}/${e.totalSets})`; sub.style.color = 'var(--red)'; }
+          const bar = document.getElementById('cdb-' + ei); if (bar) bar.style.width = '100%';
+          if (pb) { pb.textContent = 'Iniciar Descanso ⏳'; pb.style.background = 'var(--red)'; pb.style.borderColor = 'var(--red)'; pb.style.color = '#fff'; pb.disabled = false; pb.style.opacity = ''; }
+        } else {
+          e.completed = true; e.setsDone = e.totalSets;
+          if (d) { d.textContent = '00:00'; d.className = 'cardio-display done'; }
+          if (sub) { sub.textContent = '¡EJERCICIO COMPLETADO CON ÉXITO! 🎉✅'; sub.style.color = 'var(--green)'; }
+          if (pb) { pb.textContent = 'Hecho'; pb.disabled = true; pb.style.opacity = '0.5'; pb.style.background = ''; pb.style.borderColor = ''; }
+          const ab = document.getElementById('ab-' + ei); if (ab) ab.style.display = 'none';
+          const sb = document.getElementById('sb-' + ei); if (sb) sb.style.display = 'none';
+          updProgress();
+        }
+      } else {
+        e.isRest = false;
+        e.currentSet++;
+        e.remaining = e.workTime;
+        if (d) { d.textContent = fmtTime(e.workTime); d.className = 'cardio-display paused'; }
+        if (sub) { sub.textContent = `Serie ${e.currentSet} de ${e.totalSets} • Objetivo: ${fmtTime(e.workTime)}`; sub.style.color = 'var(--cyan)'; }
+        const bar = document.getElementById('cdb-' + ei); if (bar) bar.style.width = '100%';
+        if (pb) { pb.textContent = 'Iniciar Serie ' + e.currentSet + ' ⏱️'; pb.style.background = 'var(--cyan)'; pb.style.borderColor = 'var(--cyan)'; pb.style.color = '#000'; pb.disabled = false; pb.style.opacity = ''; }
+      }
+    }
+  }, 1000);
+}
+
 function render() {
   for (const k in cardioInts) { clearInterval(cardioInts[k]); delete cardioInts[k]; }
   const c = document.getElementById('exContainer');
@@ -458,10 +553,31 @@ function render() {
       }
       card.innerHTML = `<div class="ex-hdr"><div class="ex-name">${esc(ex.name)} <span class="badge badge-str">Fuerza</span></div><button class="ex-del" data-e="${ei}">&#10005;</button></div><table class="tbl"><thead><tr><th class="c-set">Serie</th><th class="c-prev">Ant</th><th class="c-kg">kg</th><th class="c-reps">Reps</th><th class="c-chk">&#10003;</th></tr></thead><tbody>${rows}</tbody></table><div class="add-r"><button class="add-set" data-e="${ei}">+ Añadir Serie</button></div>`;
       c.appendChild(card);
-    } else {
+    } else if (ex.type === 'cardio') {
       const pct = ex.duration > 0 ? ((ex.duration * 60 - ex.remaining) / (ex.duration * 60)) * 100 : 0;
       const rCls = ex.running ? 'running' : (ex.completed ? 'done' : 'paused');
       card.innerHTML = `<div class="ex-hdr"><div class="ex-name">${esc(ex.name)} <span class="badge badge-cardio">Cardio</span></div><button class="ex-del" data-e="${ei}">&#10005;</button></div><div class="cardio-timer"><div class="cardio-display ${rCls}" id="cd-${ei}">${fmtTime(ex.remaining)}</div><div class="cardio-bar"><div class="cardio-bar-in" id="cdb-${ei}" style="width:${pct}%"></div></div><div class="cardio-acts"><button class="b b-cyan cardio-play" data-e="${ei}" id="cp-${ei}">${ex.running ? 'Pausa' : (ex.completed ? 'Hecho' : 'Iniciar')}</button><button class="b b-out cardio-add10" data-e="${ei}" ${ex.completed ? 'style="display:none"' : ''}>+10s</button><button class="b b-out cardio-sub10" data-e="${ei}" ${ex.completed ? 'style="display:none"' : ''}>-10s</button></div><div class="cardio-min">${ex.duration} min</div></div>`;
+      c.appendChild(card);
+    } else if (ex.type === 'isometric') {
+      const iCls = ex.running ? 'running' : (ex.completed ? 'done' : 'paused');
+      card.innerHTML = `<div class="ex-hdr"><div class="ex-name">${esc(ex.name)} <span class="badge badge-str">Isom\xe9trico</span></div><button class="ex-del" data-e="${ei}">&#10005;</button></div><div class="cardio-timer"><div class="cardio-display ${iCls}" id="cd-${ei}">${fmtTime(ex.elapsed)}</div><div class="cardio-acts"><button class="b b-cyan iso-toggle" data-e="${ei}" id="cp-${ei}">${ex.running ? 'Pausa' : 'Iniciar Plancha'}</button><button class="b b-out iso-done" data-e="${ei}" ${ex.completed ? 'style="display:none"' : ''}>Finalizar</button></div><div class="cardio-min">Cron\xf3metro</div></div>`;
+      c.appendChild(card);
+    } else if (ex.type === 'manual') {
+      const doneClass = ex.completed ? 'done' : '';
+      const doneText = ex.completed ? ' \u2705' : '';
+      card.innerHTML = `<div class="ex-hdr"><div class="ex-name">${esc(ex.name)} <span class="badge badge-cardio">Cardio</span></div><button class="ex-del" data-e="${ei}">&#10005;</button></div><div class="cardio-timer"><div class="cardio-display ${doneClass}" id="cd-${ei}">${ex.trackedMin} min${doneText}</div><div class="cardio-bar"><div class="cardio-bar-in" id="cdb-${ei}" style="width:${Math.min(100, (ex.trackedMin / ex.targetMin) * 100)}%"></div></div><div class="cardio-acts"><button class="b b-out man-add10" data-e="${ei}" ${ex.completed ? 'style="display:none"' : ''}>+10 min</button><button class="b b-out man-add20" data-e="${ei}" ${ex.completed ? 'style="display:none"' : ''}>+20 min</button><button class="b b-cyan man-done" data-e="${ei}" id="cp-${ei}">${ex.completed ? 'Hecho' : '\xa1Bici Hecha!'}</button></div><div class="cardio-min">${ex.trackedMin} / ${ex.targetMin} min</div></div>`;
+      c.appendChild(card);
+    } else if (ex.type === 'interval') {
+      const iCls = ex.running ? 'running' : (ex.completed ? 'done' : 'paused');
+      const badgeLabel = ex.completed ? 'Hecho' : (ex.isRest ? 'Descanso' : 'Trabajo');
+      const subText = ex.completed ? '¡EJERCICIO COMPLETADO CON ÉXITO! 🎉✅' : (ex.isRest ? `Descanso • Quedan ${ex.restTime}s (Serie ${ex.currentSet}/${ex.totalSets})` : `Serie ${ex.currentSet} de ${ex.totalSets} • Objetivo: ${fmtTime(ex.workTime)}`);
+      const subColor = ex.completed ? 'var(--green)' : (ex.isRest ? 'var(--red)' : 'var(--cyan)');
+      const btnBg = ex.isRest ? 'var(--red)' : 'var(--cyan)';
+      const btnColor = ex.isRest ? '#fff' : '#000';
+      const btnText = ex.completed ? 'Hecho' : (ex.isRest ? 'Iniciar Descanso ⏳' : `Iniciar Serie ${ex.currentSet} ⏱️`);
+      const btnDisabled = ex.completed ? 'disabled style="opacity:0.5"' : '';
+      const btnInline = ` style="background:${btnBg};border-color:${btnBg};color:${btnColor}"`;
+      card.innerHTML = `<div class="ex-hdr"><div class="ex-name">${esc(ex.name)} <span class="badge badge-str">${badgeLabel}</span></div><button class="ex-del" data-e="${ei}">&#10005;</button></div><div class="cardio-timer"><div class="cardio-display ${iCls}" id="cd-${ei}">${ex.completed ? '00:00' : fmtTime(ex.remaining)}</div><div class="cardio-bar"><div class="cardio-bar-in" id="cdb-${ei}" style="width:${ex.completed ? '100' : ((ex.isRest ? (ex.restTime > 0 ? (ex.remaining / ex.restTime) : 0) : (ex.workTime > 0 ? (ex.remaining / ex.workTime) : 0)) * 100)}%"></div></div><div class="cardio-acts"><button class="b b-cyan int-toggle" data-e="${ei}" id="cp-${ei}" ${btnDisabled}${btnInline}>${btnText}</button><button class="b b-out int-add10" data-e="${ei}" id="ab-${ei}" ${ex.completed ? 'style="display:none"' : ''}>+10s</button><button class="b b-out int-sub10" data-e="${ei}" id="sb-${ei}" ${ex.completed ? 'style="display:none"' : ''}>-10s</button></div><div class="cardio-min" id="sub-${ei}" style="color:${subColor}">${subText}</div></div>`;
       c.appendChild(card);
     }
   }
@@ -476,6 +592,8 @@ function render() {
   for (let ei = 0; ei < S.exercises.length; ei++) {
     const ex = S.exercises[ei];
     if (ex.type === 'cardio' && ex.running && ex.remaining > 0) startCardioTimer(ei);
+    if (ex.type === 'isometric' && ex.running) startIsometricTimer(ei);
+    if (ex.type === 'interval' && ex.running && ex.remaining > 0) startIntervalTimer(ei);
   }
   renderCal();
 }
@@ -549,6 +667,118 @@ function attachEvents() {
     });
   });
 
+  document.querySelectorAll('.iso-toggle').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const ei = parseInt(this.dataset.e), ex = S.exercises[ei];
+      if (!ex || ex.type !== 'isometric' || ex.completed) return;
+      if (ex.running) {
+        ex.running = false;
+        if (cardioInts[ei]) { clearInterval(cardioInts[ei]); delete cardioInts[ei]; }
+        const d = document.getElementById('cd-' + ei); if (d) d.className = 'cardio-display paused';
+        this.textContent = 'Reanudar Plancha'; save();
+      } else {
+        const d = document.getElementById('cd-' + ei); if (d) d.className = 'cardio-display running';
+        this.textContent = 'Pausa'; startIsometricTimer(ei); save();
+      }
+    });
+  });
+
+  document.querySelectorAll('.iso-done').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const ei = parseInt(this.dataset.e), ex = S.exercises[ei];
+      if (!ex || ex.type !== 'isometric') return;
+      ex.running = false; ex.completed = true;
+      if (cardioInts[ei]) { clearInterval(cardioInts[ei]); delete cardioInts[ei]; }
+      const d = document.getElementById('cd-' + ei); if (d) d.className = 'cardio-display done';
+      this.style.display = 'none';
+      const tb = document.getElementById('cp-' + ei); if (tb) { tb.textContent = 'Hecho'; tb.disabled = true; tb.style.opacity = '0.5'; }
+      beep3(); save(); updProgress();
+    });
+  });
+
+  document.querySelectorAll('.man-add10').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const ei = parseInt(this.dataset.e), ex = S.exercises[ei];
+      if (!ex || ex.type !== 'manual' || ex.completed) return;
+      ex.trackedMin += 10;
+      const d = document.getElementById('cd-' + ei); if (d) d.textContent = ex.trackedMin + ' min';
+      const pct = ex.targetMin > 0 ? (ex.trackedMin / ex.targetMin) * 100 : 0;
+      const b = document.getElementById('cdb-' + ei); if (b) b.style.width = Math.min(100, pct) + '%';
+      const ml = this.closest('.cardio-timer').querySelector('.cardio-min'); if (ml) ml.textContent = ex.trackedMin + ' / ' + ex.targetMin + ' min';
+      save(); updProgress();
+    });
+  });
+
+  document.querySelectorAll('.man-add20').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const ei = parseInt(this.dataset.e), ex = S.exercises[ei];
+      if (!ex || ex.type !== 'manual' || ex.completed) return;
+      ex.trackedMin += 20;
+      const d = document.getElementById('cd-' + ei); if (d) d.textContent = ex.trackedMin + ' min';
+      const pct = ex.targetMin > 0 ? (ex.trackedMin / ex.targetMin) * 100 : 0;
+      const b = document.getElementById('cdb-' + ei); if (b) b.style.width = Math.min(100, pct) + '%';
+      const ml = this.closest('.cardio-timer').querySelector('.cardio-min'); if (ml) ml.textContent = ex.trackedMin + ' / ' + ex.targetMin + ' min';
+      save(); updProgress();
+    });
+  });
+
+  document.querySelectorAll('.man-done').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const ei = parseInt(this.dataset.e), ex = S.exercises[ei];
+      if (!ex || ex.type !== 'manual') return;
+      ex.trackedMin = ex.targetMin; ex.completed = true;
+      const d = document.getElementById('cd-' + ei); if (d) { d.textContent = ex.trackedMin + ' min \u2705'; d.className = 'cardio-display done'; }
+      const pct = document.getElementById('cdb-' + ei); if (pct) pct.style.width = '100%';
+      this.textContent = 'Hecho'; this.disabled = true; this.style.opacity = '0.5';
+      const ad = this.closest('.cardio-timer').querySelectorAll('.b-out'); ad.forEach(a => a.style.display = 'none');
+      beep3(); save(); updProgress();
+    });
+  });
+
+  document.querySelectorAll('.int-toggle').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const ei = parseInt(this.dataset.e), ex = S.exercises[ei];
+      if (!ex || ex.type !== 'interval' || ex.completed) return;
+      if (ex.running) {
+        ex.running = false;
+        if (cardioInts[ei]) { clearInterval(cardioInts[ei]); delete cardioInts[ei]; }
+        const d = document.getElementById('cd-' + ei); if (d) d.className = 'cardio-display paused';
+        this.textContent = ex.isRest ? 'Iniciar Descanso ⏳' : 'Reanudar ▶️';
+        this.style.background = ex.isRest ? 'var(--red)' : 'var(--cyan)';
+        this.style.borderColor = ex.isRest ? 'var(--red)' : 'var(--cyan)';
+        this.style.color = '#000'; save();
+      } else {
+        const d = document.getElementById('cd-' + ei); if (d) d.className = 'cardio-display running';
+        this.textContent = 'Pausa ⏸️';
+        this.style.background = ex.isRest ? 'var(--red)' : 'var(--cyan)';
+        this.style.borderColor = ex.isRest ? 'var(--red)' : 'var(--cyan)';
+        this.style.color = '#000'; startIntervalTimer(ei); save();
+      }
+    });
+  });
+
+  document.querySelectorAll('.int-add10').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const ei = parseInt(this.dataset.e), ex = S.exercises[ei];
+      if (!ex || ex.type !== 'interval' || ex.completed) return;
+      ex.remaining = Math.min(ex.remaining + 10, ex.isRest ? ex.restTime : ex.workTime);
+      const d = document.getElementById('cd-' + ei); if (d) d.textContent = fmtTime(ex.remaining);
+      const maxT = ex.isRest ? ex.restTime : ex.workTime;
+      const b = document.getElementById('cdb-' + ei); if (b) b.style.width = (maxT > 0 ? (ex.remaining / maxT) * 100 : 0) + '%'; save();
+    });
+  });
+
+  document.querySelectorAll('.int-sub10').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const ei = parseInt(this.dataset.e), ex = S.exercises[ei];
+      if (!ex || ex.type !== 'interval' || ex.completed) return;
+      ex.remaining = Math.max(ex.remaining - 10, 0);
+      const d = document.getElementById('cd-' + ei); if (d) d.textContent = fmtTime(ex.remaining);
+      const maxT = ex.isRest ? ex.restTime : ex.workTime;
+      const b = document.getElementById('cdb-' + ei); if (b) b.style.width = (maxT > 0 ? (ex.remaining / maxT) * 100 : 0) + '%'; save();
+    });
+  });
+
   document.getElementById('addExBtn')?.addEventListener('click', () => {
     const name = prompt('Nombre del ejercicio (ej: Press 3x10 o Bici 30 min):');
     if (!name || !name.trim()) return;
@@ -586,8 +816,14 @@ document.getElementById('finishBtn').addEventListener('click', () => {
       totalReps += done * (parseInt(ex.sets[0]?.reps) || 0);
       totalVol += done * (parseInt(ex.sets[0]?.kg) || 0) * (parseInt(ex.sets[0]?.reps) || 0);
       summary += `${ex.name}: ${done}/${ex.sets.length} sets\n`;
-    } else {
+    } else if (ex.type === 'cardio') {
       summary += `${ex.name}: ${ex.completed ? 'Completado' : fmtTime(ex.remaining)}\n`;
+    } else if (ex.type === 'isometric') {
+      summary += `${ex.name}: ${fmtTime(ex.elapsed)}\n`;
+    } else if (ex.type === 'manual') {
+      summary += `${ex.name}: ${ex.trackedMin} min${ex.completed ? ' \u2705' : ''}\n`;
+    } else if (ex.type === 'interval') {
+      summary += `${ex.name}: ${ex.setsDone}/${ex.totalSets} series${ex.completed ? ' \u2705' : ''}\n`;
     }
   }
   S.history[dateKey] = {
@@ -600,8 +836,53 @@ document.getElementById('finishBtn').addEventListener('click', () => {
   save();
   renderCal();
   selectCalDay(dateKey);
+
+  const opciones = { weekday: 'long', day: 'numeric', month: 'long' };
+  const fechaHoy = new Date().toLocaleDateString('es-ES', opciones);
+  const durStr = `${Math.floor(sessionDuration / 60)}m ${sessionDuration % 60}s`;
+
+  let reporte = `\ud83d\udccb *REPORTE DE ENTRENAMIENTO* \ud83d\udccb\n`;
+  reporte += `\ud83d\udcaa *HiVan Gym v1.5*\n`;
+  reporte += `\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n`;
+  reporte += `\ud83d\udcc5 *Fecha:* ${fechaHoy.toUpperCase()}\n`;
+  reporte += `\u23f1\ufe0f *Tiempo total:* ${durStr}\n`;
+  reporte += `\ud83d\udcca *Progreso:* ${pct}%\n\n`;
+  reporte += `\ud83c\udfcb\ufe0f\u200d\u2642\ufe0f *EJERCICIOS COMPLETADOS:*\n`;
+  for (const ex of S.exercises) {
+    if (ex.type === 'strength') {
+      let done = 0;
+      for (const s of ex.sets) { if (s.checked) done++; }
+      reporte += `\u2022 \ud83c\udfcb\ufe0f\u200d\u2642\ufe0f *${ex.name}:* ${done}/${ex.sets.length} sets\n`;
+    } else if (ex.type === 'cardio') {
+      reporte += `\u2022 \ud83c\udfc3\u200d\u2642\ufe0f *${ex.name}:* ${ex.completed ? 'Completado' : fmtTime(ex.remaining)}\n`;
+    } else if (ex.type === 'isometric') {
+      reporte += `\u2022 \ud83e\uddd8\u200d\u2642\ufe0f *${ex.name}:* Aguantado: ${fmtTime(ex.elapsed)}\n`;
+    } else if (ex.type === 'manual') {
+      reporte += `\u2022 \ud83d\udeb4\u200d\u2642\ufe0f *${ex.name}:* ${ex.trackedMin}/${ex.targetMin} min${ex.completed ? ' \u2705' : ''}\n`;
+    } else if (ex.type === 'interval') {
+      reporte += `\u2022 \ud83e\uddd8\u200d\u2642\ufe0f *${ex.name}:* ${ex.setsDone}/${ex.totalSets} series${ex.completed ? ' \u2705' : ''}\n`;
+    }
+  }
+  reporte += `\n\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n`;
+  reporte += `\u00a1Entrenamiento finalizado y listo para corregir, M\u00edster! \ud83d\udd25\ud83c\udfcb\ufe0f\u200d\u2642\ufe0f`;
+
+  navigator.clipboard.writeText(reporte).then(() => {
+    const fb = document.getElementById('finishBtn');
+    const origText = fb.textContent;
+    fb.textContent = '\u00a1COPIADO! LISTO PARA PEGAR EN WHATSAPP \ud83d\ude80';
+    fb.style.background = '#25D366';
+    fb.style.color = '#000';
+    setTimeout(() => {
+      fb.textContent = origText;
+      fb.style.background = '';
+      fb.style.color = '';
+    }, 4000);
+  }).catch(() => {
+    alert('No se pudo copiar. El reporte se guard\u00f3 en el historial.');
+  });
+
   setTimeout(() => {
-    if (confirm('¡Entrenamiento guardado con éxito! ¿Quieres limpiar la pantalla para mañana?')) {
+    if (confirm('\u00a1Entrenamiento guardado con \u00e9xito! \u00bfQuieres limpiar la pantalla para ma\u00f1ana?')) {
       for (const k in cardioInts) { clearInterval(cardioInts[k]); delete cardioInts[k]; }
       rtStop();
     }
@@ -616,7 +897,10 @@ function getPct() {
   let total = 0, done = 0;
   for (const ex of S.exercises) {
     if (ex.type === 'strength') { for (const s of ex.sets) { total++; if (s.checked) done++; } }
-    else { total += ex.duration; if (ex.completed) done += ex.duration; else done += Math.max(0, ex.duration - (ex.remaining / 60)); }
+    else if (ex.type === 'cardio') { total += ex.duration; if (ex.completed) done += ex.duration; else done += Math.max(0, ex.duration - (ex.remaining / 60)); }
+    else if (ex.type === 'isometric') { total++; if (ex.completed) done++; }
+    else if (ex.type === 'manual') { total += ex.targetMin; done += ex.completed ? ex.targetMin : Math.min(ex.trackedMin, ex.targetMin); }
+    else if (ex.type === 'interval') { total += ex.totalSets; done += ex.completed ? ex.totalSets : ex.setsDone; }
   }
   return total === 0 ? 0 : Math.round((done / total) * 100);
 }
